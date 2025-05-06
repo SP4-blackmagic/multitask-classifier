@@ -1,0 +1,52 @@
+# SGD model configuration
+model:
+  name: "sgd"
+  type: "linear"
+  
+  # Model parameters
+  params:
+    loss: "hinge"
+    penalty: "l2"
+    alpha: 0.0001
+    l1_ratio: 0.15
+    fit_intercept: true
+    max_iter: 1000
+    tol: 1e-3
+    shuffle: true
+    learning_rate: "optimal"
+    eta0: 0.0
+    power_t: 0.5
+    early_stopping: false
+    validation_fraction: 0.1
+    n_iter_no_change: 5
+    class_weight: "balanced"
+    
+  # Hyperparameter tuning
+  hyperparameters:
+    loss: ["hinge", "log", "modified_huber", "squared_hinge", "perceptron"]
+    penalty: ["l1", "l2", "elasticnet"]
+    alpha: [0.0001, 0.001, 0.01, 0.1]
+    l1_ratio: [0.1, 0.15, 0.2, 0.25]
+    learning_rate: ["constant", "optimal", "invscaling", "adaptive"]
+    eta0: [0.01, 0.1, 1.0]
+    
+  # Feature importance settings
+  feature_importance:
+    method: "coefficients"
+    top_n_features: 10
+    plot_importance: true
+    coefficient_analysis: true
+    convergence_analysis: true
+    
+  # Model evaluation
+  evaluation:
+    metrics:
+      - "accuracy"
+      - "precision"
+      - "recall"
+      - "f1"
+      - "roc_auc"
+    cross_validation: true
+    n_splits: 5
+    scoring: "accuracy"
+    convergence_monitoring: true 

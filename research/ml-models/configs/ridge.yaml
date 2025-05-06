@@ -1,0 +1,41 @@
+# Ridge model configuration
+model:
+  name: "ridge"
+  type: "linear"
+  
+  # Model parameters
+  params:
+    alpha: 1.0
+    fit_intercept: true
+    normalize: false
+    max_iter: 1000
+    tol: 1e-3
+    solver: "auto"
+    class_weight: "balanced"
+    
+  # Hyperparameter tuning
+  hyperparameters:
+    alpha: [0.001, 0.01, 0.1, 1.0, 10.0, 100.0]
+    fit_intercept: [true, false]
+    normalize: [true, false]
+    solver: ["auto", "svd", "cholesky", "lsqr", "sparse_cg", "sag", "saga"]
+    
+  # Feature importance settings
+  feature_importance:
+    method: "coefficients"
+    top_n_features: 10
+    plot_importance: true
+    coefficient_analysis: true
+    l2_norm: true
+    
+  # Model evaluation
+  evaluation:
+    metrics:
+      - "accuracy"
+      - "precision"
+      - "recall"
+      - "f1"
+      - "roc_auc"
+    cross_validation: true
+    n_splits: 5
+    scoring: "accuracy" 
