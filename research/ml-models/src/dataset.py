@@ -12,6 +12,8 @@ import spectral
 from scipy.signal import savgol_filter
 from scipy.spatial import ConvexHull
 import warnings
+from scipy.stats import skew, kurtosis
+from tqdm import tqdm
 
 class SpectralDataset:
     """Class for handling spectral dataset operations."""
@@ -28,6 +30,9 @@ class SpectralDataset:
         self.label_encoders = {}
         self.scaler = None
         self.pca_transformer = None
+        self._train_data = None
+        self._val_data = None
+        self._test_data = None
         
     def load_annotations(self, split: str) -> Optional[Dict]:
         """Load annotations for a specific split.
@@ -400,3 +405,186 @@ class SpectralDataset:
         pca_path = os.path.join(input_dir, 'feature_pca.joblib')
         if os.path.exists(pca_path):
             self.pca_transformer = joblib.load(pca_path)
+
+    def get_training_data(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Get training data.
+        
+        Returns:
+            Tuple of (features, labels)
+        """
+        if self._train_data is None:
+            print("Loading training annotations...")
+            annotations = self.load_annotations('train')
+            if annotations is None:
+                raise ValueError("Failed to load training annotations")
+                
+            print("Preparing training data...")
+            df, _ = self.prepare_split_data(annotations, 'train')
+            if df is None:
+                raise ValueError("Failed to prepare training data")
+                
+            # Extract features and labels
+            print("Extracting features from training data...")
+            X = self._extract_features_from_df(df)
+            print("Extracting labels from training data...")
+            y = self._extract_labels_from_df(df)
+            
+            # Fit and transform features
+            print("Fitting and transforming features...")
+            self.fit_transformers(X)
+            X = self.transform_features(X)
+            
+            self._train_data = (X, y)
+            
+        return self._train_data
+        
+    def get_validation_data(self) -> Tuple[np.ndarray, np.ndarray]:
+        """Get validation data.
+        
+        Returns:
+            Tuple of (features, labels)
+        """
+        if self._val_data is None:
+            print("Loading validation annotations...")
+            annotations = self.load_annotations('val')
+            if annotations is None:
+                raise ValueError("Failed to load validation annotations")
+                
+            print("Preparing validation data...")
+            df, _ = self.prepare_split_data(annotations, 'val')
+            if df is None:
+                raise ValueError("Failed to prepare validation data")
+                
+            # Extract features and labels
+            print("Extracting features from validation data...")
+            X = self._extract_features_from_df(df)
+            print("Extracting labels from validation data...")
+            y = self._extract_labels_from_df(df)
+            
+            # Transform features using fitted transformers
+            print("Transforming validation features...")
+            X = self.transform_features(X)
+            
+            self._val_data = (X, y)
+            
+        return self._val_data
+        
+    def get_task_data(self, X: np.ndarray, y: np.ndarray, task: str) -> Tuple[np.ndarray, np.ndarray]:
+        """Get data for a specific task.
+        
+        Args:
+            X: Features array
+            y: Labels array
+            task: Task name
+            
+        Returns:
+            Tuple of (features, task-specific labels)
+        """
+        if task not in self.config['tasks']:
+            raise ValueError(f"Unknown task: {task}")
+            
+        # Get the column name for the task
+        task_col = self.config['tasks'][task]
+        
+        # Create or get label encoder for the task
+        if task not in self.label_encoders:
+            self.label_encoders[task] = LabelEncoder()
+            self.label_encoders[task].fit(y[task_col])
+            
+        # Transform labels
+        y_task = self.label_encoders[task].transform(y[task_col])
+        
+        return X, y_task
+        
+    def _load_envi_data(self, header_path: str) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
+        """Load ENVI format hyperspectral data.
+        
+        Args:
+            header_path: Path to the ENVI header file
+            
+        Returns:
+            Tuple of (data cube, wavelengths) or (None, None) if loading fails
+        """
+        try:
+            # Try to load with spectral.io.envi.open
+            img = spectral.io.envi.open(header_path)
+            if img is None:
+                # If that fails, try to find the data file manually
+                header_dir = os.path.dirname(header_path)
+                header_base = os.path.splitext(os.path.basename(header_path))[0]
+                
+                # Look for common data file extensions
+                for ext in ['.raw', '.dat', '.img', '.bin']:
+                    data_path = os.path.join(header_dir, header_base + ext)
+                    if os.path.exists(data_path):
+                        img = spectral.io.envi.open(header_path, data_path)
+                        break
+                        
+            if img is None:
+                warnings.warn(f"Could not find data file for header: {header_path}")
+                return None, None
+                
+            # Read the data
+            cube = img.load()
+            wavelengths = np.array(img.wavelength)
+            
+            return cube, wavelengths
+            
+        except Exception as e:
+            warnings.warn(f"Failed to load ENVI data: {e}")
+            return None, None
+            
+    def _extract_features_from_df(self, df: pd.DataFrame) -> np.ndarray:
+        """Extract features from DataFrame.
+        
+        Args:
+            df: DataFrame containing file paths
+            
+        Returns:
+            Feature matrix
+        """
+        features_list = []
+        
+        # Add progress bar for feature extraction
+        for _, row in tqdm(df.iterrows(), total=len(df), desc="Extracting features"):
+            if not isinstance(row['files'], dict) or 'header_file' not in row['files']:
+                continue
+                
+            header_path = os.path.join(self.root_dir, row['files']['header_file'])
+            if not os.path.exists(header_path):
+                warnings.warn(f"Header file not found: {header_path}")
+                continue
+                
+            # Load ENVI data
+            cube, wavelengths = self._load_envi_data(header_path)
+            if cube is None or wavelengths is None:
+                continue
+                
+            # Extract features
+            features = self.extract_features(cube, wavelengths, row['id'])
+            if features is not None:
+                features_list.append(features)
+                
+        if not features_list:
+            return np.array([])
+            
+        return np.array(features_list)
+        
+    def _extract_labels_from_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Extract labels from DataFrame.
+        
+        Args:
+            df: DataFrame containing labels
+            
+        Returns:
+            DataFrame with task-specific labels
+        """
+        labels = {}
+        for task, col in self.config['tasks'].items():
+            if col in df.columns:
+                labels[task] = df[col].values
+                
+        if not labels:
+            raise ValueError("No labels found in the data")
+            
+        return pd.DataFrame(labels)

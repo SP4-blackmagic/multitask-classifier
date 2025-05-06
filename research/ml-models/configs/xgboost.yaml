@@ -1,4 +1,7 @@
 # XGBoost model configuration
+base_config: "base.yaml"
+data_config: "data.yaml"
+
 model:
   name: "xgboost"
   type: "tree_based"

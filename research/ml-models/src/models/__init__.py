@@ -2,10 +2,12 @@
 
 from .base import BaseModel
 from .tree_models import RandomForestModel, XGBoostModel, LightGBMModel, CatBoostModel
-from .linear_models import LogisticRegressionModel, RidgeModel, SGDModel
+from .linear.logistic_regression import LogisticRegressionModel
+from .linear.ridge import RidgeModel
+from .linear.sgd import SGDModel
 from .svm_models import SVCLinearModel, SVCRBFModel
 from .ensemble_models import ExtraTreesModel, AdaBoostModel, GradientBoostingModel
-from .other_models import (
+from .other import (
     KNNModel,
     DecisionTreeModel,
     GaussianNBModel,

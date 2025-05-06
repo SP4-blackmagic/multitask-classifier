@@ -13,7 +13,7 @@ from typing import Dict, Optional
 sys.path.append(str(Path(__file__).parent))
 
 from src.trainer import ModelTrainer
-from src.dataset import DatasetHandler
+from src.dataset import SpectralDataset
 
 def load_config(config_path: str) -> Dict:
     """Load and validate configuration from YAML file.
@@ -23,6 +23,10 @@ def load_config(config_path: str) -> Dict:
         
     Returns:
         Configuration dictionary
+        
+    Raises:
+        FileNotFoundError: If config file doesn't exist
+        ValueError: If required sections are missing
     """
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found: {config_path}")
@@ -30,8 +34,32 @@ def load_config(config_path: str) -> Dict:
     with open(config_path, 'r') as f:
         config = yaml.safe_load(f)
         
+    # Load base config if specified
+    if 'base_config' in config:
+        base_config_path = os.path.join(os.path.dirname(config_path), config['base_config'])
+        if not os.path.exists(base_config_path):
+            raise FileNotFoundError(f"Base configuration file not found: {base_config_path}")
+            
+        with open(base_config_path, 'r') as f:
+            base_config = yaml.safe_load(f)
+            
+        # Merge configs, with model-specific config taking precedence
+        config = {**base_config, **config}
+        
+    # Load data config if specified
+    if 'data_config' in config:
+        data_config_path = os.path.join(os.path.dirname(config_path), config['data_config'])
+        if not os.path.exists(data_config_path):
+            raise FileNotFoundError(f"Data configuration file not found: {data_config_path}")
+            
+        with open(data_config_path, 'r') as f:
+            data_config = yaml.safe_load(f)
+            
+        # Add data config to the merged config
+        config['data'] = data_config
+        
     # Validate required configuration sections
-    required_sections = ['data', 'model_registry', 'training']
+    required_sections = ['data', 'model', 'training']
     for section in required_sections:
         if section not in config:
             raise ValueError(f"Missing required configuration section: {section}")
@@ -94,7 +122,7 @@ def main():
         
         # Initialize dataset handler
         logger.info("Initializing dataset handler")
-        dataset_handler = DatasetHandler(config['data'])
+        dataset_handler = SpectralDataset(config['data'])
         
         # Initialize trainer
         logger.info("Initializing model trainer")

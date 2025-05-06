@@ -11,6 +11,7 @@ import wandb
 from sklearn.ensemble import StackingClassifier
 from sklearn.linear_model import LogisticRegression
 
+from .models.base import BaseModel
 from .models.factory import ModelFactory
 from .metrics import MetricsCalculator
 from .validator import ModelValidator
