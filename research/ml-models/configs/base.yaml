@@ -1,0 +1,14 @@
+# Model configuration
+model:
+  name: "multitask_classifier"
+  num_classes: 5  # Number of fruit classes
+  input_size: [224, 224]  # Standard input size for images
+  batch_size: 32
+  learning_rate: 0.001
+
+# Training configuration
+training:
+  epochs: 100
+  early_stopping_patience: 10
+  validation_split: 0.2
+  random_seed: 42
