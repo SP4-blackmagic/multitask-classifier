@@ -14,6 +14,8 @@ from scipy.spatial import ConvexHull
 import warnings
 from scipy.stats import skew, kurtosis
 from tqdm import tqdm
+from skimage.filters import threshold_otsu
+import hashlib
 
 class SpectralDataset:
     """Class for handling spectral dataset operations."""
@@ -27,12 +29,28 @@ class SpectralDataset:
         self.config = config
         self.root_dir = config['root_dir']
         self.annotations_dir = os.path.join(self.root_dir, config['annotations']['path'])
+        self.cache_dir = os.path.join(self.root_dir, 'cache')
+        os.makedirs(self.cache_dir, exist_ok=True)
         self.label_encoders = {}
         self.scaler = None
         self.pca_transformer = None
         self._train_data = None
         self._val_data = None
         self._test_data = None
+        
+    def _get_cache_path(self, file_path: str) -> str:
+        """Get cache file path for a given data file.
+        
+        Args:
+            file_path: Path to the data file
+            
+        Returns:
+            Path to the cache file
+        """
+        # Create a hash of the file path and config
+        config_str = json.dumps(self.config, sort_keys=True)
+        file_hash = hashlib.md5((file_path + config_str).encode()).hexdigest()
+        return os.path.join(self.cache_dir, f"{file_hash}.npy")
         
     def load_annotations(self, split: str) -> Optional[Dict]:
         """Load annotations for a specific split.
@@ -197,7 +215,7 @@ class SpectralDataset:
             return None
             
     def _remove_background(self, cube: np.ndarray) -> Tuple[Optional[np.ndarray], Optional[np.ndarray]]:
-        """Remove background from spectral cube.
+        """Remove background from spectral cube using Otsu thresholding.
         
         Args:
             cube: Spectral cube data
@@ -208,15 +226,23 @@ class SpectralDataset:
         if not isinstance(cube, np.ndarray) or cube.ndim != 3:
             return None, None
             
-        threshold = self.config['processing']['background_threshold']
-        with np.errstate(divide='ignore', invalid='ignore'):
+        try:
+            # Calculate mean intensity across all bands
             mean_intensity = np.mean(cube, axis=-1, dtype=np.float64)
             mean_intensity[np.isnan(mean_intensity)] = 0
             
-        mask = mean_intensity > threshold
-        masked_cube = cube * mask[..., np.newaxis]
-        
-        return masked_cube, mask
+            # Apply Otsu thresholding
+            threshold = threshold_otsu(mean_intensity)
+            mask = mean_intensity > threshold
+            
+            # Apply mask to cube
+            masked_cube = cube * mask[..., np.newaxis]
+            
+            return masked_cube, mask
+            
+        except Exception as e:
+            warnings.warn(f"Failed to remove background: {e}")
+            return None, None
         
     def _extract_statistical_features(self, spectrum: np.ndarray) -> List[float]:
         """Extract statistical features from spectrum.
@@ -506,36 +532,66 @@ class SpectralDataset:
             Tuple of (data cube, wavelengths) or (None, None) if loading fails
         """
         try:
-            # Try to load with spectral.io.envi.open
-            img = spectral.io.envi.open(header_path)
-            if img is None:
-                # If that fails, try to find the data file manually
-                header_dir = os.path.dirname(header_path)
-                header_base = os.path.splitext(os.path.basename(header_path))[0]
-                
-                # Look for common data file extensions
-                for ext in ['.raw', '.dat', '.img', '.bin']:
-                    data_path = os.path.join(header_dir, header_base + ext)
-                    if os.path.exists(data_path):
-                        img = spectral.io.envi.open(header_path, data_path)
-                        break
-                        
-            if img is None:
+            header_dir = os.path.dirname(header_path)
+            header_base = os.path.splitext(os.path.basename(header_path))[0]
+            
+            # First try to find the data file that matches the header exactly
+            data_path = None
+            for ext in ['.bin', '.raw', '.dat', '.img']:  # Prioritize .bin since that's what we have
+                test_path = os.path.join(header_dir, header_base + ext)
+                if os.path.exists(test_path):
+                    data_path = test_path
+                    break
+            
+            if data_path is None:
                 warnings.warn(f"Could not find data file for header: {header_path}")
                 return None, None
-                
-            # Read the data
-            cube = img.load()
-            wavelengths = np.array(img.wavelength)
-            
-            return cube, wavelengths
+
+            try:
+                # Try to open with explicit data path
+                img = spectral.io.envi.open(header_path, data_path)
+                if img is not None:
+                    cube = img.load()
+                    
+                    # Try to get wavelength information from header
+                    wavelengths = None
+                    try:
+                        # First try to get wavelengths directly from the image object
+                        if hasattr(img, 'wavelength'):
+                            wavelengths = np.array(img.wavelength)
+                        else:
+                            # If not available, try to read from header file
+                            with open(header_path, 'r') as f:
+                                header_content = f.read()
+                                
+                            # Look for wavelength information in header
+                            wavelength_lines = [line for line in header_content.split('\n') 
+                                             if line.strip().startswith('wavelength = {')]
+                            
+                            if wavelength_lines:
+                                # Extract wavelength values from header
+                                wavelength_str = wavelength_lines[0].split('{')[1].split('}')[0]
+                                wavelengths = np.array([float(w.strip()) for w in wavelength_str.split(',')])
+                            else:
+                                # If no wavelength field, try to use band numbers as wavelengths
+                                wavelengths = np.arange(img.shape[2])
+                                
+                        return cube, wavelengths
+                    except Exception as e:
+                        # If wavelength extraction fails, use band numbers
+                        wavelengths = np.arange(img.shape[2])
+                        return cube, wavelengths
+                        
+            except Exception as e:
+                warnings.warn(f"Error loading ENVI data: {str(e)}")
+                return None, None
             
         except Exception as e:
             warnings.warn(f"Failed to load ENVI data: {e}")
             return None, None
             
     def _extract_features_from_df(self, df: pd.DataFrame) -> np.ndarray:
-        """Extract features from DataFrame.
+        """Extract features from DataFrame with caching.
         
         Args:
             df: DataFrame containing file paths
@@ -544,29 +600,54 @@ class SpectralDataset:
             Feature matrix
         """
         features_list = []
+        failed_files = []
         
         # Add progress bar for feature extraction
         for _, row in tqdm(df.iterrows(), total=len(df), desc="Extracting features"):
             if not isinstance(row['files'], dict) or 'header_file' not in row['files']:
+                failed_files.append((row['id'], "Missing header file in files dict"))
                 continue
                 
             header_path = os.path.join(self.root_dir, row['files']['header_file'])
             if not os.path.exists(header_path):
-                warnings.warn(f"Header file not found: {header_path}")
+                failed_files.append((row['id'], f"Header file not found: {header_path}"))
                 continue
                 
+            # Check cache first
+            cache_path = self._get_cache_path(header_path)
+            if os.path.exists(cache_path):
+                try:
+                    features = np.load(cache_path)
+                    features_list.append(features)
+                    continue
+                except Exception as e:
+                    warnings.warn(f"Failed to load cached features for {header_path}: {e}")
+            
             # Load ENVI data
             cube, wavelengths = self._load_envi_data(header_path)
             if cube is None or wavelengths is None:
+                failed_files.append((row['id'], "Failed to load ENVI data"))
                 continue
                 
             # Extract features
             features = self.extract_features(cube, wavelengths, row['id'])
             if features is not None:
                 features_list.append(features)
+                # Cache the features
+                try:
+                    np.save(cache_path, features)
+                except Exception as e:
+                    warnings.warn(f"Failed to cache features for {header_path}: {e}")
+            else:
+                failed_files.append((row['id'], "Failed to extract features"))
                 
         if not features_list:
-            return np.array([])
+            error_msg = "No features could be extracted. Failed files:\n"
+            for file_id, reason in failed_files[:10]:  # Show first 10 failures
+                error_msg += f"- {file_id}: {reason}\n"
+            if len(failed_files) > 10:
+                error_msg += f"... and {len(failed_files) - 10} more failures"
+            raise ValueError(error_msg)
             
         return np.array(features_list)
         
