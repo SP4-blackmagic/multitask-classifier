@@ -6,7 +6,7 @@ from .tree_models import RandomForestModel, XGBoostModel, LightGBMModel, CatBoos
 from .linear_models import LogisticRegressionModel, RidgeModel, SGDModel
 from .svm_models import SVCLinearModel, SVCRBFModel
 from .ensemble_models import ExtraTreesModel, AdaBoostModel, GradientBoostingModel
-from .other_models import (
+from .other import (
     KNNModel,
     DecisionTreeModel,
     GaussianNBModel,
