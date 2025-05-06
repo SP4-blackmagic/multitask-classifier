@@ -12,3 +12,160 @@ training:
   early_stopping_patience: 10
   validation_split: 0.2
   random_seed: 42
+  stacking:
+    cv: 5
+    n_best_models: 3
+    base_estimators:
+      - name: "lr_base"
+        type: "LogisticRegression"
+        params:
+          random_state: 42
+          max_iter: 500
+          class_weight: "balanced"
+          solver: "liblinear"
+      - name: "lgbm_base"
+        type: "LGBMClassifier"
+        params:
+          random_state: 42
+          class_weight: "balanced"
+          n_estimators: 50
+          verbosity: -1
+      - name: "mlp_base"
+        type: "MLPClassifier"
+        params:
+          hidden_layer_sizes: [32]
+          max_iter: 300
+          random_state: 42
+          early_stopping: true
+          alpha: 0.01
+    meta_estimator:
+      type: "LogisticRegression"
+      params:
+        random_state: 42
+        max_iter: 1000
+
+# Model registry configuration
+models:
+  RandomForest:
+    type: "RandomForestClassifier"
+    params:
+      n_estimators: 150
+      max_depth: 15
+      min_samples_split: 5
+      min_samples_leaf: 3
+      random_state: 42
+      class_weight: "balanced"
+      n_jobs: -1
+  XGBoost:
+    type: "XGBClassifier"
+    params:
+      n_estimators: 150
+      max_depth: 7
+      learning_rate: 0.1
+      objective: "multi:softmax"
+      eval_metric: "mlogloss"
+      use_label_encoder: false
+      random_state: 42
+      n_jobs: -1
+      tree_method: "hist"
+  LightGBM:
+    type: "LGBMClassifier"
+    params:
+      n_estimators: 150
+      random_state: 42
+      class_weight: "balanced"
+      n_jobs: -1
+      verbosity: -1
+  LogisticRegression:
+    type: "LogisticRegression"
+    params:
+      random_state: 42
+      max_iter: 1000
+      class_weight: "balanced"
+      n_jobs: -1
+  SVC_linear:
+    type: "SVC"
+    params:
+      kernel: "linear"
+      probability: true
+      random_state: 42
+      class_weight: "balanced"
+  SVC_rbf:
+    type: "SVC"
+    params:
+      kernel: "rbf"
+      probability: true
+      random_state: 42
+      class_weight: "balanced"
+  LinearSVC:
+    type: "LinearSVC"
+    params:
+      random_state: 42
+      class_weight: "balanced"
+      dual: "auto"
+      max_iter: 2000
+  KNN:
+    type: "KNeighborsClassifier"
+    params:
+      n_neighbors: 5
+      n_jobs: -1
+  DecisionTree:
+    type: "DecisionTreeClassifier"
+    params:
+      random_state: 42
+      class_weight: "balanced"
+      max_depth: 15
+  ExtraTrees:
+    type: "ExtraTreesClassifier"
+    params:
+      n_estimators: 150
+      random_state: 42
+      class_weight: "balanced"
+      n_jobs: -1
+  AdaBoost:
+    type: "AdaBoostClassifier"
+    params:
+      random_state: 42
+      n_estimators: 100
+  GradientBoosting:
+    type: "GradientBoostingClassifier"
+    params:
+      random_state: 42
+      n_estimators: 100
+  GaussianNB:
+    type: "GaussianNB"
+    params: {}
+  LDA:
+    type: "LinearDiscriminantAnalysis"
+    params: {}
+  QDA:
+    type: "QuadraticDiscriminantAnalysis"
+    params: {}
+  MLP:
+    type: "MLPClassifier"
+    params:
+      hidden_layer_sizes: [100, 50]
+      max_iter: 500
+      random_state: 42
+      early_stopping: true
+      alpha: 0.001
+  Ridge:
+    type: "RidgeClassifier"
+    params:
+      random_state: 42
+      class_weight: "balanced"
+  SGD:
+    type: "SGDClassifier"
+    params:
+      random_state: 42
+      class_weight: "balanced"
+      n_jobs: -1
+      loss: "log_loss"
+      penalty: "elasticnet"
+  CatBoost:
+    type: "CatBoostClassifier"
+    params:
+      iterations: 150
+      random_state: 42
+      verbose: 0
+      thread_count: -1

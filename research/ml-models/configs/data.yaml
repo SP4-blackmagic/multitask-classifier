@@ -5,6 +5,9 @@ root_dir: "/Users/phongsakonkonrad/Google Drive/My Drive/sp4/machine_learning/da
 annotations:
   path: "annotations"
   zip_file: "annotations.zip"
+  train_file: "train_all_v2.json"
+  val_file: "val_v2.json"
+  test_file: "test_v2.json"
 
 # Individual dataset configurations
 datasets:
@@ -32,6 +35,27 @@ datasets:
 processing:
   image_size: [224, 224]
   channels: 3
+  background_threshold: 0.05
   normalization:
+    method: "standard_scaler"
     mean: [0.485, 0.456, 0.406]  # ImageNet mean
-    std: [0.229, 0.224, 0.225]   # ImageNet std 
+    std: [0.229, 0.224, 0.225]   # ImageNet std
+
+# Feature extraction settings
+features:
+  use_avg_spectrum: true
+  use_derivative_1: true
+  use_derivative_2: true
+  use_continuum_removed: true
+  use_fft_feature: false
+  use_stat_features: true
+  use_pca_features: true
+  n_pca_components: 15
+  savitzky_golay:
+    window: 11
+    polyorder: 3
+
+# Target labels configuration
+tasks:
+  ripeness: "ripeness_state"
+  firmness: "firmness_category" 
